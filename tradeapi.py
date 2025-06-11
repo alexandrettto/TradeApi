@@ -1,4 +1,3 @@
-
 import grpc
 from google.protobuf.json_format import MessageToDict
 from datetime import datetime, timezone, timedelta
@@ -21,25 +20,41 @@ from finamgrpc.tradeapi.v1 import side_pb2
 
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.type.interval_pb2 import Interval
-
 from google.type.decimal_pb2 import Decimal
 
-from datetime import datetime, timezone
 
+class FinamApi:
+    """
+    FinamApi provides methods to authenticate, fetch market data,
+    account information, and manage orders via Finam's gRPC Trade API.
+    """
+    def __init__(self, token):
+        """
+        Initialize the API client:
+        - Establish a secure gRPC channel
+        - Authenticate and retrieve a JWT token
+        - Fetch account details, assets list, and exchange list
+        - Build an order status lookup table
 
-
-
-
-class FinamApi: 
-    def __init__(self,token):
-        self.token = token 
-        self.channel = grpc.secure_channel('ftrr01.finam.ru:443', grpc.ssl_channel_credentials())
+        Args:
+            token (str): API secret for authentication
+        """
+        self.token = token
+        self.channel = grpc.secure_channel(
+            'ftrr01.finam.ru:443', grpc.ssl_channel_credentials()
+        )
         self.auth()
 
-        re_tkn = auth_service_pb2.TokenDetailsRequest(token = self.jwc_token)
-        acc = self.auth_stub.TokenDetails(re_tkn,metadata = (self.metadata,))
+        # Fetch token details and account info
+        re_tkn = auth_service_pb2.TokenDetailsRequest(token=self.jwc_token)
+        acc = self.auth_stub.TokenDetails(
+            re_tkn,
+            metadata=(self.metadata,)
+        )
         self.account_inf = acc
-        assets_stub  = AssetsServiceStub(self.channel)
+
+        # Load assets into DataFrame
+        assets_stub = AssetsServiceStub(self.channel)
         assets_request = assets_service_pb2.AssetsRequest()
         assets = assets_stub.Assets(assets_request, metadata=(self.metadata,))
 
@@ -56,245 +71,427 @@ class FinamApi:
             })
         self.assets = pd.DataFrame(data)
 
+        # Load exchanges into DataFrame
         exchange_request = assets_service_pb2.ExchangesRequest()
         exchanges = assets_stub.Exchanges(exchange_request, metadata=(self.metadata,))
         exc = exchanges.exchanges
         data = [MessageToDict(e, preserving_proto_field_name=True) for e in exc]
         self.exchanges = pd.DataFrame(data=data)
 
+        # Map numeric order statuses to human-readable strings
         self.status_order = {
-                0: "Неопределенное значение",
-                1: "NEW",
-                2: "PARTIALLY_FILLED",
-                3: "FILLED",
-                4: "DONE_FOR_DAY",
-                5: "CANCELED",
-                6: "REPLACED",
-                7: "PENDING_CANCEL",
-                9: "REJECTED",
-                10: "SUSPENDED",
-                11: "PENDING_NEW",
-                13: "EXPIRED",
-                16: "FAILED",
-                17: "FORWARDING",
-                18: "WAIT",
-                19: "DENIED_BY_BROKER",
-                20: "REJECTED_BY_EXCHANGE",
-                21: "WATCHING",
-                22: "EXECUTED",
-                23: "DISABLED",
-                24: "LINK_WAIT",
-                27: "SL_GUARD_TIME",
-                28: "SL_EXECUTED",
-                29: "SL_FORWARDING",
-                30: "TP_GUARD_TIME",
-                31: "TP_EXECUTED",
-                32: "TP_CORRECTION",
-                33: "TP_FORWARDING",
-                34: "TP_CORR_GUARD_TIME",
-            }
+            0: "Неопределенное значение",
+            1: "NEW",
+            2: "PARTIALLY_FILLED",
+            3: "FILLED",
+            4: "DONE_FOR_DAY",
+            5: "CANCELED",
+            6: "REPLACED",
+            7: "PENDING_CANCEL",
+            9: "REJECTED",
+            10: "SUSPENDED",
+            11: "PENDING_NEW",
+            13: "EXPIRED",
+            16: "FAILED",
+            17: "FORWARDING",
+            18: "WAIT",
+            19: "DENIED_BY_BROKER",
+            20: "REJECTED_BY_EXCHANGE",
+            21: "WATCHING",
+            22: "EXECUTED",
+            23: "DISABLED",
+            24: "LINK_WAIT",
+            27: "SL_GUARD_TIME",
+            28: "SL_EXECUTED",
+            29: "SL_FORWARDING",
+            30: "TP_GUARD_TIME",
+            31: "TP_EXECUTED",
+            32: "TP_CORRECTION",
+            33: "TP_FORWARDING",
+            34: "TP_CORR_GUARD_TIME",
+        }
 
-    def auth(self): 
+    def auth(self):
+        """
+        Authenticate with the Finam API using the provided secret.
+        Stores the JWT token and metadata header for future calls.
+        """
         self.auth_stub = AuthServiceStub(self.channel)
-        request = auth_service_pb2.AuthRequest(secret= self.token)
+        request = auth_service_pb2.AuthRequest(secret=self.token)
         response = self.auth_stub.Auth(request)
         self.jwc_token = response.token
-        self.metadata =  ('authorization', self.jwc_token)
-    
-    def account(self,account_id): 
+        self.metadata = ('authorization', self.jwc_token)
+
+    def account(self, account_id):
+        """
+        Retrieve detailed information for a specified account.
+
+        Args:
+            account_id (str): The ID of the account to fetch
+
+        Returns:
+            GetAccountResponse: Protobuf response with account details
+        """
         acc_stub = AccountsServiceStub(self.channel)
-        request = accounts_service_pb2.GetAccountRequest(account_id = account_id)
-        response = acc_stub.GetAccount(request,metadata = (self.metadata,))
+        request = accounts_service_pb2.GetAccountRequest(
+            account_id=account_id
+        )
+        response = acc_stub.GetAccount(
+            request, metadata=(self.metadata,)
+        )
         return response
 
-    def acc_trades(self,account_id, interval: list): 
+    def acc_trades(self, account_id, interval: list):
+        """
+        Fetch trades executed on an account within a date range.
+
+        Args:
+            account_id (str): Account ID
+            interval (list): Two-element list with start and end dates (YYYY-MM-DD)
+
+        Returns:
+            pd.DataFrame: Trades with numeric columns converted to floats
+        """
         acc_stub = AccountsServiceStub(self.channel)
-        interval_v = self.make_interval_from_strings(interval[0], interval[1])
-        request = accounts_service_pb2.	TradesRequest(account_id = account_id,interval = interval_v)
-        response = acc_stub.Trades(request,metadata = (self.metadata,))
+        interval_v = self.make_interval_from_strings(
+            interval[0], interval[1]
+        )
+        request = accounts_service_pb2.TradesRequest(
+            account_id=account_id,
+            interval=interval_v
+        )
+        response = acc_stub.Trades(
+            request, metadata=(self.metadata,)
+        )
         data = MessageToDict(response)
         df = pd.DataFrame(data['trades'])
         for col in ['price', 'size']:
-            df[col] = df[col].apply(lambda x: float(x['value']))
+            df[col] = df[col].apply(
+                lambda x: float(x['value'])
+            )
         return df
 
-    def transactions(self,account_id, interval: list): 
+    def transactions(self, account_id, interval: list):
+        """
+        Fetch cash/balance transactions for an account within a date range.
+
+        Args:
+            account_id (str): Account ID
+            interval (list): Two-element list with start and end dates (YYYY-MM-DD)
+
+        Returns:
+            pd.DataFrame: Transactions flattened into a table
+        """
         acc_stub = AccountsServiceStub(self.channel)
-        interval_v = self.make_interval_from_strings(interval[0], interval[1])
-        request = accounts_service_pb2.TransactionsRequest(account_id = account_id,interval = interval_v)
-        response = acc_stub.Transactions(request,metadata = (self.metadata,))
+        interval_v = self.make_interval_from_strings(
+            interval[0], interval[1]
+        )
+        request = accounts_service_pb2.TransactionsRequest(
+            account_id=account_id,
+            interval=interval_v
+        )
+        response = acc_stub.Transactions(
+            request, metadata=(self.metadata,)
+        )
         data = MessageToDict(response)
         data = [self.flatten_dict(j) for j in data['transactions']]
         df = pd.DataFrame(data)
-        return df 
-    
-    def option_chain(self,symbol): 
+        return df
+
+    def option_chain(self, symbol):
+        """
+        Retrieve the option chain for a given underlying symbol.
+
+        Args:
+            symbol (str): Underlying asset symbol
+
+        Returns:
+            OptionsChainResponse: Protobuf response with option chain data
+        """
         option_stub = AssetsServiceStub(self.channel)
-        request = assets_service_pb2.OptionsChainRequest(underlying_symbol = symbol) 
-        option_chain = option_stub.OptionsChain(request,metadata = (self.metadata,))
-        return option_chain
-    
-    def orderbook(self, symbol): 
+        request = assets_service_pb2.OptionsChainRequest(
+            underlying_symbol=symbol
+        )
+        return option_stub.OptionsChain(
+            request, metadata=(self.metadata,)
+        )
+
+    def orderbook(self, symbol):
+        """
+        Fetch the current order book (bids and offers) for a symbol.
+
+        Args:
+            symbol (str): Asset symbol
+
+        Returns:
+            dict: DataFrames for 'bid' and 'offer', sorted by price
+        """
         orderbook_stub = MarketDataServiceStub(self.channel)
-        request_orderbook = marketdata_service_pb2.OrderBookRequest(symbol = symbol)
-        orderbook = orderbook_stub.OrderBook(request_orderbook,metadata = (self.metadata,))
-        bid = []
-        offer = []
-        for row in orderbook.orderbook.rows:
-            volume = float(row.buy_size.value) if row.buy_size.value !='' else float(row.sell_size.value) 
-            if row.buy_size.value !='':
-                bid.append({
-                    "price": float(row.price.value),
-                    "volume": volume,
-                    "side": 'BID'
-                })     
+        request = marketdata_service_pb2.OrderBookRequest(
+            symbol=symbol
+        )
+        ob = orderbook_stub.OrderBook(
+            request, metadata=(self.metadata,)
+        )
+        bid, offer = [], []
+        for row in ob.orderbook.rows:
+            vol = float(row.buy_size.value) if row.buy_size.value else float(row.sell_size.value)
+            entry = {"price": float(row.price.value), "volume": vol}
+            if row.buy_size.value:
+                entry["side"] = 'BID'
+                bid.append(entry)
             else:
-                offer.append({
-                    "price": float(row.price.value),
-                    "volume": volume,
-                    "side": 'OFFER'
-                })
-        offer = pd.DataFrame(offer)
-        bid = pd.DataFrame(bid)
+                entry["side"] = 'OFFER'
+                offer.append(entry)
+        df_bid = pd.DataFrame(bid).sort_values(
+            'price', ascending=False, ignore_index=True
+        )
+        df_off = pd.DataFrame(offer).sort_values(
+            'price', ignore_index=True
+        )
+        return {'bid': df_bid, 'offer': df_off}
 
-        offer.sort_values('price',inplace=True,ignore_index=True)
-        bid.sort_values('price', ascending=False, inplace=True,ignore_index=True)
-        
-        return {'bid':bid,'offer':offer}
-    
-    def Quotes(self,symbol): 
-       quotes_stub = MarketDataServiceStub(self.channel)
-       request_quotes = marketdata_service_pb2.QuoteRequest(symbol = symbol)
-       quotes = quotes_stub.LastQuote(request_quotes,metadata = (self.metadata,))
-       d = MessageToDict(quotes.quote, preserving_proto_field_name=True)
-       d2 = self.flatten_dict(d)
-       quotes = pd.DataFrame([d2])
-       quotes['timestamp'] = pd.to_datetime(quotes['timestamp'],format='mixed').dt.tz_convert('Europe/Moscow')
-       return quotes
-    
-    def Trades(self,symbol):
-       quotes_stub = MarketDataServiceStub(self.channel)
-       request_trades = marketdata_service_pb2.LatestTradesRequest(symbol = symbol)
-       trades = quotes_stub.LatestTrades(request_trades,metadata = (self.metadata,))
-       rows = []
-       for trade in trades.trades:
-            d = MessageToDict(trade, preserving_proto_field_name=True)
-            flat = self.flatten_dict(d)
-            rows.append(flat)
-       trades = pd.DataFrame(rows)
-       trades['timestamp'] = pd.to_datetime(trades['timestamp'],format='mixed').dt.tz_convert('Europe/Moscow')
+    def Quotes(self, symbol):
+        """
+        Fetch the latest quote for a symbol and normalize to a DataFrame.
 
-       return trades
+        Args:
+            symbol (str)
 
-    def Bars(self,symbol,interval:list, timeframe = "TIME_FRAME_H1"):
-       interval_v = self.make_interval_from_strings(interval[0], interval[1])
-       quotes_stub = MarketDataServiceStub(self.channel)
-       request_bars= marketdata_service_pb2.BarsRequest(symbol = symbol, interval = interval_v,timeframe = timeframe)
-       bars = quotes_stub.Bars(request_bars,metadata = (self.metadata,))
-    
-       data = []
-       for br in bars.bars: 
-           br = MessageToDict(br)
-           br = self.flatten_dict(br)
-           data.append(br)
+        Returns:
+            pd.DataFrame: Single-row with price, size, timestamp in Moscow time
+        """
+        stub = MarketDataServiceStub(self.channel)
+        req = marketdata_service_pb2.QuoteRequest(symbol=symbol)
+        quote = stub.LastQuote(req, metadata=(self.metadata,))
+        d = MessageToDict(quote.quote, preserving_proto_field_name=True)
+        flat = self.flatten_dict(d)
+        df = pd.DataFrame([flat])
+        df['timestamp'] = pd.to_datetime(
+            df['timestamp'], utc=True
+        ).dt.tz_convert('Europe/Moscow')
+        return df
 
-       df = pd.DataFrame(data)
-       df['timestamp'] = pd.to_datetime(df['timestamp'],format='mixed').dt.tz_convert('Europe/Moscow')
+    def Trades(self, symbol):
+        """
+        Fetch the latest batch of trades for a symbol and normalize.
 
-       return df
+        Args:
+            symbol (str)
 
-    def flatten_dict(self,d, parent_key='', sep='_'):
-        """Рекурсивно превращает вложенные dict в плоские с объединёнными ключами"""
+        Returns:
+            pd.DataFrame: Recent trades with timestamp in Moscow time
+        """
+        stub = MarketDataServiceStub(self.channel)
+        req = marketdata_service_pb2.LatestTradesRequest(symbol=symbol)
+        trades = stub.LatestTrades(req, metadata=(self.metadata,))
+        rows = []
+        for tr in trades.trades:
+            d = MessageToDict(tr, preserving_proto_field_name=True)
+            rows.append(self.flatten_dict(d))
+        df = pd.DataFrame(rows)
+        df['timestamp'] = pd.to_datetime(
+            df['timestamp'], utc=True
+        ).dt.tz_convert('Europe/Moscow')
+        return df
+
+    def Bars(self, symbol, interval: list, timeframe="TIME_FRAME_H1"):
+        """
+        Fetch historical bar data (candlesticks) for a symbol over a date range.
+
+        Args:
+            symbol (str)
+            interval (list): [start_str, end_str]
+            timeframe (str): e.g., "TIME_FRAME_H1"
+
+        Returns:
+            pd.DataFrame: Bars with OHLCV and timestamp in Moscow time
+        """
+        stub = MarketDataServiceStub(self.channel)
+        interval_v = self.make_interval_from_strings(
+            interval[0], interval[1]
+        )
+        req = marketdata_service_pb2.BarsRequest(
+            symbol=symbol,
+            interval=interval_v,
+            timeframe=timeframe
+        )
+        bars = stub.Bars(req, metadata=(self.metadata,))
+        data = []
+        for br in bars.bars:
+            data.append(self.flatten_dict(MessageToDict(br)))
+        df = pd.DataFrame(data)
+        df['timestamp'] = pd.to_datetime(
+            df['timestamp'], utc=True
+        ).dt.tz_convert('Europe/Moscow')
+        return df
+
+    def flatten_dict(self, d, parent_key='', sep='_'):
+        """
+        Recursively flatten nested dicts, converting {'value':...} to plain values.
+
+        Args:
+            d (dict): Nested dictionary
+            parent_key (str): Prefix for keys
+            sep (str): Separator between nested keys
+
+        Returns:
+            dict: Flattened dictionary
+        """
         items = []
         for k, v in d.items():
             new_key = f"{parent_key}{sep}{k}" if parent_key else k
             if isinstance(v, dict):
-                # Если внутри только {'value': ...}
                 if set(v.keys()) == {'value'}:
                     try:
                         items.append((new_key, float(v['value'])))
                     except ValueError:
                         items.append((new_key, v['value']))
                 else:
-                    # Вложенный словарь — рекурсия
-                    items.extend(self.flatten_dict(v, new_key, sep=sep).items())
+                    items.extend(
+                        self.flatten_dict(v, new_key, sep).items()
+                    )
             else:
                 items.append((new_key, v))
         return dict(items)
-    
-    def make_interval_from_strings(self,start_str, end_str, fmt='%Y-%m-%d'):
-        # Parse string to datetime (always use UTC for proto)
-        dt_start = datetime.strptime(start_str, fmt).replace(tzinfo=timezone.utc)
-        dt_end = datetime.strptime(end_str, fmt).replace(tzinfo=timezone.utc)
-        ts_start = Timestamp()
+
+    def make_interval_from_strings(self, start_str, end_str, fmt='%Y-%m-%d'):
+        """
+        Convert two date strings into a protobuf Interval (UTC).
+
+        Args:
+            start_str (str): Start date
+            end_str (str): End date
+            fmt (str): Date format
+
+        Returns:
+            Interval: Protobuf interval with UTC timestamps
+        """
+        dt_start = datetime.strptime(start_str, fmt).replace(
+            tzinfo=timezone.utc
+        )
+        dt_end = datetime.strptime(end_str, fmt).replace(
+            tzinfo=timezone.utc
+        )
+        ts_start, ts_end = Timestamp(), Timestamp()
         ts_start.FromDatetime(dt_start)
-        ts_end = Timestamp()
         ts_end.FromDatetime(dt_end)
         return Interval(start_time=ts_start, end_time=ts_end)
 
-    def place_order(self, symbol,account_id, quantity, limit_price,side = 0, type = orders_service_pb2.ORDER_TYPE_MARKET):
-        quantity = Decimal(value=str(quantity))  
-        if limit_price: 
-            limit_price = Decimal(value=str(limit_price))
-        
-        side = side_pb2.SIDE_BUY if side == 0 else side_pb2.SIDE_SELL
+    def place_order(self, symbol, account_id, quantity, limit_price=None, 
+                    side=0, type=orders_service_pb2.ORDER_TYPE_MARKET):
+        """
+        Place a new order (market or limit) and return its details.
 
-        order_stub = OrdersServiceStub(self.channel)
-        request = orders_service_pb2.Order(symbol = symbol,account_id = account_id,quantity = quantity,type =type,limit_price = limit_price,side = side)
-        order_place = order_stub.PlaceOrder(request,metadata = (self.metadata,))
-        order_id = order_place.order_id
-        status = self.status_order[order_place.status]
-        transact = order_place.transact_at
-        dt_utc = datetime.fromtimestamp(transact.seconds + transact.nanos / 1e9, tz=timezone.utc)
-        moscow_tz = timezone(timedelta(hours=3))
-        dt_msk = dt_utc.astimezone(moscow_tz)
-        return {'order_id':order_id,'status':status,'time':dt_msk}
+        Args:
+            symbol (str)
+            account_id (str)
+            quantity (float)
+            limit_price (float, optional)
+            side (int): 0=buy, 1=sell
+            type (enum): Order type constant
 
-    def cancel_order(self,order_id,account_id):
-        order_stub = OrdersServiceStub(self.channel)
-        cancel_order = orders_service_pb2.CancelOrderRequest(account_id = account_id,order_id = order_id)
-        order_cancel = order_stub.CancelOrder(cancel_order,metadata = (self.metadata,))
-        order_id = order_cancel.order_id
-        status = self.status_order[order_cancel.status]
-        transact = order_cancel.transact_at
-        dt_utc = datetime.fromtimestamp(transact.seconds + transact.nanos / 1e9, tz=timezone.utc)
-        moscow_tz = timezone(timedelta(hours=3))
-        dt_msk = dt_utc.astimezone(moscow_tz)
-        return {'order_id':order_id,'status':status,'time':dt_msk}
+        Returns:
+            dict: {'order_id', 'status', 'time'} with time in Moscow
+        """
+        qty = Decimal(value=str(quantity))
+        pr = Decimal(value=str(limit_price)) if limit_price else None
+        sd = side_pb2.SIDE_BUY if side == 0 else side_pb2.SIDE_SELL
+        stub = OrdersServiceStub(self.channel)
+        req = orders_service_pb2.Order(
+            symbol=symbol, account_id=account_id,
+            quantity=qty, limit_price=pr,
+            side=sd, type=type
+        )
+        resp = stub.PlaceOrder(req, metadata=(self.metadata,))
+        ts = resp.transact_at
+        dt_utc = datetime.fromtimestamp(
+            ts.seconds + ts.nanos / 1e9,
+            tz=timezone.utc
+        )
+        msk_tz = timezone(timedelta(hours=3))
+        return {
+            'order_id': resp.order_id,
+            'status': self.status_order[resp.status],
+            'time': dt_utc.astimezone(msk_tz)
+        }
 
-    def orders_info(self,account_id):
-        order_stub = OrdersServiceStub(self.channel)
-        order_req = orders_service_pb2.OrdersRequest(account_id = account_id)
-        order_info = order_stub.GetOrders(order_req,metadata = (self.metadata,))
-        result = list()
-        for el in order_info.orders: 
-            el_dict = MessageToDict(el)
-            result.append(self.flatten_dict(el_dict))
-        orders = pd.DataFrame(result)
-        orders['transactAt'] = pd.to_datetime(orders['transactAt'],format='mixed').dt.tz_convert('Europe/Moscow')
-        return orders
-    
-    def order_info(self,account_id,order_id): 
-        order_stub = OrdersServiceStub(self.channel)
-        order_req = orders_service_pb2.GetOrderRequest(account_id = account_id,order_id = order_id)
-        order_info = order_stub.GetOrder(order_req,metadata = (self.metadata,))
-        ord = MessageToDict(order_info.order)
-        order_status = self.status_order[order_info.status]
-        ord['status'] = order_status
-        return self.flatten_dict(ord)
-    
-    def stream_trades(self,symbol): 
-       quotes_stub = MarketDataServiceStub(self.channel)
-       request_trades = marketdata_service_pb2.SubscribeLatestTradesRequest(symbol = symbol)
-       stream = quotes_stub.SubscribeLatestTrades(request_trades,metadata = (self.metadata,))
-       return stream
-       try:
-        for trade in stream:
-            print(trade)
-       except KeyboardInterrupt:
-            print("Получен Ctrl+C — отменяем подписку...")
-       finally:
-            # 4) Отмена RPC
-            stream.cancel()
-            print("Стрим остановлен и канал закрыт.")
+    def cancel_order(self, order_id, account_id):
+        """
+        Cancel an existing order and return its updated status.
 
+        Args:
+            order_id (str)
+            account_id (str)
+
+        Returns:
+            dict: {'order_id', 'status', 'time'} with time in Moscow
+        """
+        stub = OrdersServiceStub(self.channel)
+        req = orders_service_pb2.CancelOrderRequest(
+            order_id=order_id, account_id=account_id
+        )
+        res = stub.CancelOrder(req, metadata=(self.metadata,))
+        ts = res.transact_at
+        dt_utc = datetime.fromtimestamp(
+            ts.seconds + ts.nanos / 1e9, tz=timezone.utc
+        )
+        return {
+            'order_id': res.order_id,
+            'status': self.status_order[res.status],
+            'time': dt_utc.astimezone(timezone(timedelta(hours=3)))
+        }
+
+    def orders_info(self, account_id):
+        """
+        Fetch all orders for an account (active and historical).
+
+        Args:
+            account_id (str)
+
+        Returns:
+            pd.DataFrame: Orders with transactAt in Moscow time
+        """
+        stub = OrdersServiceStub(self.channel)
+        req = orders_service_pb2.OrdersRequest(account_id=account_id)
+        info = stub.GetOrders(req, metadata=(self.metadata,))
+        rows = [self.flatten_dict(MessageToDict(o)) for o in info.orders]
+        df = pd.DataFrame(rows)
+        df['transactAt'] = pd.to_datetime(
+            df['transactAt'], utc=True
+        ).dt.tz_convert('Europe/Moscow')
+        return df
+
+    def order_info(self, account_id, order_id):
+        """
+        Retrieve detailed info for a specific order.
+
+        Args:
+            account_id (str)
+            order_id (str)
+
+        Returns:
+            dict: Flattened order info with human-readable status
+        """
+        stub = OrdersServiceStub(self.channel)
+        req = orders_service_pb2.GetOrderRequest(
+            account_id=account_id, order_id=order_id
+        )
+        res = stub.GetOrder(req, metadata=(self.metadata,))
+        ord_dict = MessageToDict(res.order)
+        ord_dict['status'] = self.status_order[res.status]
+        return self.flatten_dict(ord_dict)
+
+    def stream_trades(self, symbol):
+        """
+        Open a streaming RPC for live trades on a symbol. Iterate over the returned generator to receive updates.
+
+        Args:
+            symbol (str)
+
+        Returns:
+            generator: Yields protobuf Trade messages
+        """
+        stub = MarketDataServiceStub(self.channel)
+        req = marketdata_service_pb2.SubscribeLatestTradesRequest(symbol=symbol)
+        return stub.SubscribeLatestTrades(req, metadata=(self.metadata,))

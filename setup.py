@@ -1,7 +1,7 @@
 import setuptools
 setuptools.setup(
-    name="TradeApi",
-    version="0.1.0",
+    name="tradeapi",
+    version="0.1.3",
     author="Alexander Illyuk",
     author_email="aaillyuk@gmail.com",
     description="Python package for Finam API",
@@ -9,12 +9,13 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/example-pip-package",
     license="MIT",
-    packages=setuptools.find_packages(where="finam-trade-api"),
-    package_dir={"": "finam-trade-api"},
+    py_modules=["tradeapi"],
+    packages=setuptools.find_packages(where="finam-trade-api", include=["finamgrpc", "finamgrpc.*"]),
+    package_dir={"finamgrpc": "finam-trade-api/finamgrpc"},
     python_requires=">=3.7",
     install_requires=[
         "grpcio>=1.39.0",                    # gRPC core library
-        "protobuf>=3.17.0",                  # Google Protobuf runtime
+        "protobuf>=5.0.0",                  # Google Protobuf runtime
         "googleapis-common-protos>=1.53.0",  # Common proto types (e.g., Timestamp)
         "pandas>=1.1.0"
     ],
@@ -28,4 +29,6 @@ setuptools.setup(
         # 'console_scripts': ['example=example_pip_package.greet:main'],
     },
 )
+
+
 
