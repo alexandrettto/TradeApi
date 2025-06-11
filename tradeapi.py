@@ -1,11 +1,7 @@
-import sys
-import os 
+
 import grpc
 from google.protobuf.json_format import MessageToDict
 from datetime import datetime, timezone, timedelta
-
-path = os.path.abspath(os.path.join(os.getcwd(), 'finam-trade-api'))
-sys.path.insert(0, path)
 
 import pandas as pd
 
@@ -33,7 +29,6 @@ from datetime import datetime, timezone
 
 
 
-token = 'eyJraWQiOiI3NDcwZDdlMy1kOGEwLTQyZWQtYTkzZi1hZDIxODFlYWRmMjEiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJwYXJlbnQiOiI3ZTJmNjViOS1kZDAzLTQ4Y2ItODhlYy1kYjg0ZTc0ZjYwMWQiLCJhcGlUb2tlblByb3BlcnRpZXMiOiJINHNJQUFBQUFBQUFfeTJTUFpMYk1BeUZkMHc1OXJoRXVlV204MHdLei00RktJcVVGSnVTekI5YlRxTm02NlRJZ1hLYVRObzA2VkxuSEhrZzFId1BKQUFCQkxUXzllUG5uMy12dE5tcjU3OXF2M2w1T3U0TzI0LWhEazB4N25jekhUOGNLdTNuc1dnd00ydXRVeXg2ODQ3VnpwTm43ZTNjRm5VMmktWVM1X3RZOHNZeG1hSlQwRVdUdWJKT19XQldMWEVoU1h6SW9yUDJVVFRhVmVXLUhyMW95S0paX0taMnF5WlJhMFM5LUcwS1JaMzBNYmRhNHJxelc3VzhZNzQwZy1pYWQxbnJYVWE1OTdvcE9tanBiekRpSDlyMXZQWTlQTmI3aDV3bkxmVmpKM1hpWGQ2VHpwRUh2OVNES1EwdkJnUG1DNXREWFF6djZ5X0ZHS1pRZHJKRTB4LTNCN1hFcWR6SGFRMkkwX3VwR0NuWS1QeGI3UlVwYldjZ1dzYVZnU09XQ1Z3WjdNQUlxYXFfZlgybkxmTTdLUXlUZ1FEVDlZQzNER1NhbTZWZDg3a2ZHdjZzelRQdG5QT0xEeWVxWEQ5b09qRDkwdVQwb0swYnNWWlNEa1UyRHZHdERhUTZoNDloMnFSNm00R01pSXQ1QUZ6bHdnMWh4b0JCaGtlWnludU5Kbnk0a2NMVUFjLUlQY016OEM2TW0xRXNlTWVvU1dIa1ZINHc4QnhQaGEtRmIzQnlvV0R3eEpCcTJvWnNhalFYOVFqWXlJQXJ0c2dGUHNIc09xQkhsWmpRR05aSEtqVjRSYnJjcUVyb0VlYUlUNlFIUHBFMTNIY3VNU09sNHUyUzdKZ1B5UlZHMEJoMlktY2tHOGVoYlRUSjFrbDJTN0xRbDZmX3pEeU1ZYjBEQUFBIiwiemlwcGVkIjp0cnVlLCJjcmVhdGVkIjoiMTc0ODM3MDQwNSIsInJlbmV3RXhwIjoiMTc3OTkwNjQ2NSIsInNlc3MiOiJINHNJQUFBQUFBQUEvMU9LNFZJeFRUUk9NVTQxU2RSTk1rNDExVFV4TjBuVlRUSXpOdEJOdERSTE5Vc3hTMHN5U3pFU0Vyb3c0Y0x1QzFzdjdMclllR0hEaGIwWHRseHNrT0s2TUFNb3R2dGkzNFZkU2lLSk9ha1ZPZmxscVpZR0RwV0plU21wRlhwRnBRRCt4S0tpWGdBQUFBIiwiaXNzIjoidHhzZXJ2ZXIiLCJrZXlJZCI6Ijc0NzBkN2UzLWQ4YTAtNDJlZC1hOTNmLWFkMjE4MWVhZGYyMSIsInR5cGUiOiJUcmFkZUFwaTIwIiwic2VjcmV0cyI6IkVDVXV6b0NiUFR4ZWNuOWd4ejA1cWc9PSIsInRzdGVwIjoiZmFsc2UiLCJleHAiOjE3Nzk5MDY0MDUsImp0aSI6IjcwMGE0NjY5LWE5ZTktNGY5YS1iOGMyLTBmMjMyNjY5YTg5MSJ9.h-IrFi-MEAn8CeZ3QDWdg9zgoMsdqVNvpRl5a0ZUzgPLaB1lht1sZqCKl2yDPzyuzW0fRSffoG0P4ZKiKwCb-Q'
 
 class FinamApi: 
     def __init__(self,token):
@@ -303,29 +298,3 @@ class FinamApi:
             stream.cancel()
             print("Стрим остановлен и канал закрыт.")
 
-
-fnm = FinamApi(token = token)
-
-fnm.orders_info('1411611')
-quantity = Decimal(value=str(1))         # Важно: value — строка!
-limit_price = Decimal(value="11.1")
-
-
-
-order = fnm.place_order(symbol=symbol,account_id=acc_id,quantity=1,limit_price=11.1,type=orders_service_pb2.ORDER_TYPE_LIMIT,side=1)
-id_ord = order['order_id']
-
-fnm.cancel_order(order_id=id_ord,account_id='1411611')
-
-order = fnm.order_info(account_id=acc_id,order_id= id_ord)
-order
-z = fnm.Bars(symbol = symbol,interval=['2025-06-01','2025-06-11'])
-z['fast'] = z['close'].ewm(span=6, adjust=False).mean()
-z['long'] = z['close'].ewm(span=33, adjust=False).mean()
-
-q = fnm.Quotes(symbol=symbol)
-
-last = z['fast'].iloc[-1]
-alpha = 2/(6+1)
-last
-(1 - alpha)*last + alpha * q['last'].loc[0]
