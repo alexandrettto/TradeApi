@@ -455,12 +455,15 @@ class FinamApi:
         stub = OrdersServiceStub(self.channel)
         req = orders_service_pb2.OrdersRequest(account_id=account_id)
         info = stub.GetOrders(req, metadata=(self.metadata,))
-        rows = [self.flatten_dict(MessageToDict(o)) for o in info.orders]
-        df = pd.DataFrame(rows)
-        df['transactAt'] = pd.to_datetime(
-            df['transactAt'], utc=True
-        ).dt.tz_convert('Europe/Moscow')
-        return df
+        if len(info.orders) > 0: 
+            rows = [self.flatten_dict(MessageToDict(o)) for o in info.orders]
+            df = pd.DataFrame(rows)
+            df['transactAt'] = pd.to_datetime(
+                df['transactAt'], utc=True
+            ).dt.tz_convert('Europe/Moscow')
+            return info
+        else: 
+            print('No Orders Info')
 
     def order_info(self, account_id, order_id):
         """
@@ -495,3 +498,28 @@ class FinamApi:
         stub = MarketDataServiceStub(self.channel)
         req = marketdata_service_pb2.SubscribeLatestTradesRequest(symbol=symbol)
         return stub.SubscribeLatestTrades(req, metadata=(self.metadata,))
+    
+    def assets_params(self,symbol,account_id): 
+        stub = AssetsServiceStub(self.channel)
+        req = assets_service_pb2.GetAssetParamsRequest(symbol = symbol, account_id = account_id)
+        res = stub.GetAssetParams(req, metadata=(self.metadata,))
+        res_dict = MessageToDict(res)
+        res_dict = self.flatten_dict(res_dict)
+        return res_dict 
+    
+    def assets_info(self,symbol,account_id):
+        stub = AssetsServiceStub(self.channel)
+        req = assets_service_pb2.GetAssetRequest(symbol = symbol, account_id = account_id)
+        res = stub.GetAsset(req, metadata=(self.metadata,))
+        res_dict = MessageToDict(res)
+        res_dict = self.flatten_dict(res_dict)
+        return res_dict
+    
+    def schedule(self,symbol): 
+        stub = AssetsServiceStub(self.channel)
+        req = assets_service_pb2.ScheduleRequest(symbol = symbol)
+        res = stub.Schedule(req, metadata=(self.metadata,))
+        res_dict = MessageToDict(res)
+        res_dict = self.flatten_dict(res_dict)
+        return res_dict
+
