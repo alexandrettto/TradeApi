@@ -139,7 +139,15 @@ class FinamApi:
         response = acc_stub.GetAccount(
             request, metadata=(self.metadata,)
         )
-        return response
+        msg = MessageToDict(response)
+        pos = msg['positions']
+        if len(pos) != 0: 
+            df = pd.DataFrame([self.flatten_dict(j) for j in pos])
+            msg['positions'] = df 
+        else: 
+            msg['positions'] = pd.DataFrame()
+        return msg
+        
 
     def acc_trades(self, account_id, interval: list):
         """
@@ -461,7 +469,7 @@ class FinamApi:
             df['transactAt'] = pd.to_datetime(
                 df['transactAt'], utc=True
             ).dt.tz_convert('Europe/Moscow')
-            return info
+            return df
         else: 
             print('No Orders Info')
 
