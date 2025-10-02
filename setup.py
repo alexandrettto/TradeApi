@@ -1,7 +1,7 @@
 import setuptools
 setuptools.setup(
     name="tradeapi",
-    version="0.1.6",
+    version="0.1.11",
     author="Alexander Illyuk",
     author_email="aaillyuk@gmail.com",
     description="Python package for Finam API",
@@ -10,8 +10,9 @@ setuptools.setup(
     url="https://github.com/yourusername/example-pip-package",
     license="MIT",
     py_modules=["tradeapi"],
-    packages=setuptools.find_packages(where="finam-trade-api", include=["finamgrpc", "finamgrpc.*"]),
-    package_dir={"finamgrpc": "finam-trade-api/finamgrpc"},
+    packages=setuptools.find_packages(include=["finamgrpc", "finamgrpc.*"]),
+    # package_dir maps package roots -> filesystem dirs; here root is "."
+    package_dir={"": "."},
     python_requires=">=3.7",
     install_requires=[
         "grpcio>=1.39.0",                    # gRPC core library
