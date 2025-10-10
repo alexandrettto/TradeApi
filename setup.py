@@ -1,7 +1,7 @@
 import setuptools
 setuptools.setup(
     name="tradeapi",
-    version="0.1.11",
+    version="0.1.12",
     author="Alexander Illyuk",
     author_email="aaillyuk@gmail.com",
     description="Python package for Finam API",

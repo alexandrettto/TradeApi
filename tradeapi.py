@@ -21,7 +21,9 @@ from finamgrpc.tradeapi.v1 import side_pb2
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.type.interval_pb2 import Interval
 from google.type.decimal_pb2 import Decimal
-
+import asyncio
+import threading
+import time 
 
 class FinamApi:
     """
@@ -110,6 +112,11 @@ class FinamApi:
             33: "TP_FORWARDING",
             34: "TP_CORR_GUARD_TIME",
         }
+
+        self._q_lock = threading.Lock()
+        self._q_snapshots = {}                      # {symbol: {"ver": int, "data": {...}}}
+        self._q_threads = {}                        # {symbol: Thread}
+        self._q_stops = {}  
 
     def auth(self):
         """
@@ -535,3 +542,73 @@ class FinamApi:
         res_dict = self.flatten_dict(res_dict)
         return res_dict
 
+    def ensure_quote_stream(self,symbol: str):
+        if symbol in self._q_threads and self._q_threads[symbol].is_alive():
+            return  # already running
+
+        stop_evt = threading.Event()
+        self._q_stops[symbol] = stop_evt
+
+        def _runner():
+            backoff = 1.0
+            while not stop_evt.is_set():
+                try:
+                    for ev in self.stream_trades(symbol):
+                        if not ev.trades:
+                            continue
+                        t = ev.trades[-1]  # last trade in the batch
+                        snap = {
+                            "symbol": ev.symbol,
+                            "trade_id": t.trade_id,
+                            "side": t.side,
+                            "price": float(t.price.value),
+                            "size": float(t.size.value),
+                            "ts": t.timestamp.seconds + t.timestamp.nanos / 1e9,
+                        }
+                        with self._q_lock:
+                            rec = self._q_snapshots.get(symbol, {"ver": 0, "data": {}})
+                            rec["ver"] += 1
+                            rec["data"] = snap
+                            self._q_snapshots[symbol] = rec
+                        backoff = 1.0  # reset backoff after a good read
+                    # stream ended gracefully -> short sleep then reconnect
+                    time.sleep(1.0)
+                except grpc.RpcError as e:
+                    # handle UNAUTHENTICATED by refreshing your JWT (if you have a method for it)
+                    if e.code() == grpc.StatusCode.UNAUTHENTICATED:
+                        try:
+                            # self.refresh_jwt()   # implement if you have it
+                            pass
+                        except Exception:
+                            pass
+                        backoff = 1.0
+                    # backoff for other errors
+                    time.sleep(min(30.0, backoff))
+                    backoff = min(30.0, backoff * 2)
+
+        th = threading.Thread(target=_runner, name=f"quote:{symbol}", daemon=True)
+        th.start()
+        self._q_threads[symbol] = th
+
+    def get_quote_snapshot(self,symbol: str) -> dict | None:
+        with self._q_lock:
+            snap = self._q_snapshots.get(symbol)
+            # returns like {"ver": 17, "data": {"symbol": "...", "bid": 99.1, "ask": 99.2, "last": 99.2, "ts": ...}}
+            return None if snap is None else {"ver": snap["ver"], "data": dict(snap["data"])}
+
+    def stop_quote_stream(self,symbol: str):
+        """
+        Gracefully stop the background quote stream for a given symbol.
+        """
+        evt = self._q_stops.get(symbol)
+        th = self._q_threads.get(symbol)
+
+        if evt:
+            evt.set()               # signal the runner loop to stop
+        if th and th.is_alive():
+            th.join(timeout=2.0)    # wait a moment for it to finish
+
+        # clean up dicts
+        self._q_stops.pop(symbol, None)
+        self._q_threads.pop(symbol, None)
+        self._q_snapshots.pop(symbol, None)
