@@ -183,11 +183,14 @@ class FinamApi:
             request, metadata=(self.metadata,)
         )
         data = MessageToDict(response)
-        df = pd.DataFrame(data['trades'])
-        for col in ['price', 'size']:
-            df[col] = df[col].apply(
-                lambda x: float(x['value'])
-            )
+        if 'trades' in data.keys():
+            df = pd.DataFrame(data['trades'])
+            for col in ['price', 'size']:
+                df[col] = df[col].apply(
+                    lambda x: float(x['value'])
+                )
+        else: 
+            df = pd.DataFrame()
         return df
 
     def transactions(self, account_id, interval: list):
@@ -612,3 +615,5 @@ class FinamApi:
         self._q_stops.pop(symbol, None)
         self._q_threads.pop(symbol, None)
         self._q_snapshots.pop(symbol, None)
+
+
